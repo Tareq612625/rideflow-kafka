@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RideFlow Billing</title>
+<style>
+  :root {
+    color-scheme: light;
+    --plane: #f9f9f7; --surface: #fcfcfb; --surface-2: #f3f3f0;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
+    --grid: #e1e0d9; --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-6: #008300;
+    --bar: #2a78d6; --bar-track: #e1e0d9;
+    --good: #0ca30c; --warning: #fab219; --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --plane: #0d0d0d; --surface: #1a1a19; --surface-2: #222221;
+      --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+      --grid: #2c2c2a; --border: rgba(255,255,255,0.10);
+      --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-6: #008300;
+      --bar: #3987e5; --bar-track: #2c2c2a;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --plane: #0d0d0d; --surface: #1a1a19; --surface-2: #222221;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+    --grid: #2c2c2a; --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-6: #008300;
+    --bar: #3987e5; --bar-track: #2c2c2a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--plane); color: var(--text-primary);
+    font: 14px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 20px 16px 56px;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--text-secondary); font-size: 13px; }
+  .spacer { flex: 1; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px;
+    font-size: 12px; color: var(--text-secondary);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--critical); }
+  .dot.on { background: var(--good); }
+  a.link { color: var(--series-1); font-size: 12px; text-decoration: none; border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; }
+  a.link:hover { background: var(--surface-2); }
+  button.ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; font-size: 12px; cursor: pointer; }
+
+  .chain {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 18px; margin: 14px 0;
+  }
+  .chain p { margin: 0 0 12px; color: var(--text-secondary); font-size: 13px; max-width: 80ch; }
+  .pipe { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; }
+  .box {
+    flex: 1; min-width: 180px; border: 1px solid var(--border); border-radius: 10px;
+    padding: 11px 13px; background: var(--surface-2);
+  }
+  .box.me { border-color: var(--series-2); }
+  .box .n { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+  .box .t { font-weight: 650; font-size: 13.5px; margin: 2px 0 3px; }
+  .box .d { font-size: 12.5px; color: var(--text-secondary); }
+  .arrow { align-self: center; color: var(--text-muted); font-size: 18px; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .tile .label { font-size: 12px; color: var(--text-secondary); }
+  .tile .value { font-size: 28px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.2; margin-top: 4px; }
+  .tile .note { font-size: 12px; color: var(--text-muted); }
+
+  .grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 12px; margin-top: 12px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+  .panel h2 { font-size: 13px; margin: 0 0 2px; font-weight: 650; }
+  .panel p.hint { font-size: 12px; color: var(--text-muted); margin: 0 0 12px; max-width: 70ch; }
+
+  .row { display: flex; align-items: center; gap: 9px; padding: 7px 0; border-bottom: 1px solid var(--grid); font-size: 12.5px; }
+  .row:last-child { border-bottom: 0; }
+  .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mono { font-variant-numeric: tabular-nums; color: var(--text-muted); font-size: 11.5px; }
+  .inv { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--series-3); }
+  .feed { max-height: 330px; overflow-y: auto; }
+
+  .part { margin-bottom: 9px; }
+  .part-top { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+  .track { height: 9px; background: var(--bar-track); border-radius: 4px; overflow: hidden; }
+  .fill { height: 100%; background: var(--bar); border-radius: 4px; transition: width .25s ease-out; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { text-align: left; font-weight: 600; color: var(--text-muted); font-size: 11.5px; padding: 0 0 6px; }
+  td { padding: 5px 0; border-top: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+  td.num, th.num { text-align: right; }
+  .empty { color: var(--text-muted); font-size: 12.5px; padding: 10px 0; }
+  @media (max-width: 900px) { .grid, .grid-2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>RideFlow Billing</h1>
+    <span class="sub" data-t="tagline"></span>
+    <span class="spacer"></span>
+    <span class="pill"><span class="dot" id="wsDot"></span><span id="wsText">connecting…</span></span>
+    <span class="pill">group <b id="grp">billing</b></span>
+    <a class="link" id="toAnalytics" target="_blank" rel="noopener">← analytics :8001</a>
+    <a class="link" id="toLab" target="_blank" rel="noopener">Feature Lab :8003</a>
+    <button class="ghost" id="themeBtn">light</button>
+  </header>
+
+  <section class="chain">
+    <p data-t="intro"></p>
+    <div class="pipe">
+      <div class="box">
+        <div class="n">topic</div><div class="t">ride-events</div>
+        <div class="d" data-t="boxSource"></div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="box me">
+        <div class="n">this service · :8002</div><div class="t">billing-service</div>
+        <div class="d" data-t="boxMe"></div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="box">
+        <div class="n">topic</div><div class="t">invoices</div>
+        <div class="d" data-t="boxOut"></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="tiles">
+    <div class="tile">
+      <div class="label" data-t="tSeen"></div>
+      <div class="value" id="tSeen">0</div>
+      <div class="note" id="tSkipped">0 skipped</div>
+    </div>
+    <div class="tile">
+      <div class="label" data-t="tInvoices"></div>
+      <div class="value" id="tInvoices" style="color:var(--series-3)">0</div>
+      <div class="note" data-t="nInvoices"></div>
+    </div>
+    <div class="tile">
+      <div class="label" data-t="tGross"></div>
+      <div class="value" id="tGross">৳0</div>
+      <div class="note" data-t="nGross"></div>
+    </div>
+    <div class="tile">
+      <div class="label" data-t="tCommission"></div>
+      <div class="value" id="tCommission">৳0</div>
+      <div class="note" id="nCommission">20%</div>
+    </div>
+    <div class="tile">
+      <div class="label" data-t="tPayout"></div>
+      <div class="value" id="tPayout">৳0</div>
+      <div class="note" data-t="nPayout"></div>
+    </div>
+    <div class="tile">
+      <div class="label" data-t="tLag"></div>
+      <div class="value" id="tLag">0</div>
+      <div class="note" id="tLagNote"></div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2 data-t="feedTitle"></h2>
+      <p class="hint" data-t="feedHint"></p>
+      <div class="feed" id="feed"><div class="empty" data-t="waiting"></div></div>
+    </div>
+    <div class="panel">
+      <h2 data-t="partTitle"></h2>
+      <p class="hint" data-t="partHint"></p>
+      <div id="parts"></div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <h2 data-t="driverTitle"></h2>
+      <p class="hint" data-t="driverHint"></p>
+      <table>
+        <thead><tr><th data-t="thDriver"></th><th class="num" data-t="thTrips"></th><th class="num" data-t="thPayout"></th></tr></thead>
+        <tbody id="drivers"></tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <h2 data-t="zoneTitle"></h2>
+      <p class="hint" data-t="zoneHint"></p>
+      <table>
+        <thead><tr><th data-t="thZone"></th><th class="num" data-t="thGross"></th></tr></thead>
+        <tbody id="zones"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const T = {
+  tagline: "the second consumer — same messages, completely different job",
+  intro: "This service reads the exact same ride-events topic as the analytics dashboard, but under its own consumer group, so it receives every message independently. It throws away everything that is not a completed trip, turns the rest into invoices, and publishes those to a second topic. Reading and writing in one service — the read-process-write pattern. Invoices, totals and read positions commit in one Kafka transaction, so each completed trip gives exactly one invoice.",
+  boxSource: "Written by the Trip Service. Read here under group \"billing\".",
+  boxMe: "Filters to completed trips, takes the commission, issues an invoice.",
+  boxOut: "A brand new topic. Anyone can consume it next — payouts, accounting, exports.",
+  tSeen: "Ride events read", tInvoices: "Invoices issued", tGross: "Gross fares",
+  tCommission: "Platform commission", tPayout: "Driver payouts", tLag: "Consumer lag",
+  nInvoices: "only completed trips", nGross: "sum of all fares", nPayout: "fare minus commission",
+  skipped: "skipped (not completed)",
+  caughtUp: "✓ caught up", catching: "△ catching up", behind: "✕ falling behind",
+  feedTitle: "Invoices being issued", feedHint: "Each line was produced to the invoices topic just now. The grey text is the ride event it came from.",
+  partTitle: "Partitions of ride-events", partHint: "This group has its own offsets on the same 6 partitions the analytics group reads.",
+  driverTitle: "Top drivers by payout", driverHint: "what each driver actually earns",
+  zoneTitle: "Gross fares by zone", zoneHint: "before commission",
+  thDriver: "Driver", thTrips: "Trips", thPayout: "Payout", thZone: "Zone", thGross: "Gross",
+  waiting: "waiting for completed trips…", noData: "no data yet"
+};
+
+const t = k => T[k];
+const $ = id => document.getElementById(id);
+const fmt = n => Math.round(n).toLocaleString();
+const money = n => "৳" + Math.round(n).toLocaleString();
+const esc = v => String(v).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+$("toAnalytics").href = `http://${location.hostname}:8001`;
+$("toLab").href = `http://${location.hostname}:8003`;
+
+function applyText() {
+  document.querySelectorAll("[data-t]").forEach(el => {
+    const v = T[el.dataset.t];
+    if (v !== undefined) el.textContent = v;
+  });
+}
+
+function connect() {
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => { $("wsDot").classList.add("on"); $("wsText").textContent = "live"; };
+  ws.onclose = () => {
+    $("wsDot").classList.remove("on"); $("wsText").textContent = "reconnecting…";
+    setTimeout(connect, 1500);
+  };
+  ws.onmessage = e => render(JSON.parse(e.data));
+}
+connect();
+
+function render(s) {
+  $("grp").textContent = s.group_id;
+  $("tSeen").textContent = fmt(s.seen);
+  $("tSkipped").innerHTML = fmt(s.skipped) + " " + t("skipped") +
+    (s.poisoned ? ` · <b style="color:var(--critical)">${fmt(s.poisoned)} → ${esc(s.dlq_topic)}</b>` : "");
+  $("tInvoices").textContent = fmt(s.invoices);
+  $("tGross").textContent = money(s.gross);
+  $("tCommission").textContent = money(s.commission);
+  $("nCommission").textContent = Math.round(s.commission_rate * 100) + "%";
+  $("tPayout").textContent = money(s.payout);
+
+  const lag = s.lag || 0;
+  $("tLag").textContent = fmt(lag);
+  const note = $("tLagNote"), tile = $("tLag");
+  if (lag === 0)       { tile.style.color = "var(--good)";     note.textContent = t("caughtUp"); note.style.color = "var(--good)"; }
+  else if (lag < 2000) { tile.style.color = "var(--warning)";  note.textContent = t("catching"); note.style.color = "var(--warning)"; }
+  else                 { tile.style.color = "var(--critical)"; note.textContent = t("behind");   note.style.color = "var(--critical)"; }
+
+  $("feed").innerHTML = s.recent.length ? s.recent.map(i => `
+    <div class="row">
+      <span class="mono">${esc(i.invoice_id)}</span>
+      <span class="grow">${esc(i.zone)} · ${esc(i.vehicle)} · ${esc(i.distance_km)} km</span>
+      <span class="inv">${money(i.driver_payout)}</span>
+      <span class="mono">+${money(i.commission)}</span>
+      <span class="mono">← P${i.source.partition}@${fmt(i.source.offset)}</span>
+    </div>`).join("") : `<div class="empty">${t("waiting")}</div>`;
+
+  const max = Math.max(1, ...s.partitions.map(p => p.count));
+  $("parts").innerHTML = s.partitions.map(p => `
+    <div class="part">
+      <div class="part-top">
+        <span class="mono">P${p.partition} &nbsp; offset ${p.last_offset < 0 ? "—" : fmt(p.last_offset)}</span>
+        <span class="mono">${fmt(p.count)}${p.lag ? ` · +${fmt(p.lag)} lag` : ""}</span>
+      </div>
+      <div class="track"><div class="fill" style="width:${(p.count / max * 100).toFixed(1)}%"></div></div>
+    </div>`).join("") || `<div class="empty">${t("noData")}</div>`;
+
+  $("drivers").innerHTML = s.drivers.length ? s.drivers.map(d => `
+    <tr><td>${esc(d.driver)}</td><td class="num">${fmt(d.trips)}</td><td class="num">${money(d.payout)}</td></tr>`).join("")
+    : `<tr><td colspan="3" class="empty">${t("noData")}</td></tr>`;
+
+  $("zones").innerHTML = s.zones.length ? s.zones.map(z => `
+    <tr><td>${esc(z.zone)}</td><td class="num">${money(z.gross)}</td></tr>`).join("")
+    : `<tr><td colspan="2" class="empty">${t("noData")}</td></tr>`;
+}
+
+$("themeBtn").onclick = () => {
+  const dark = document.documentElement.getAttribute("data-theme") !== "light";
+  document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
+  $("themeBtn").textContent = dark ? "dark" : "light";
+};
+applyText();
+</script>
+</body>
+</html>

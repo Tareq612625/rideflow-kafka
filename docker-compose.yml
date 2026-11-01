@@ -1,0 +1,418 @@
+x-kafka-env: &kafka-env
+  # Every broker in a cluster must share this id.
+  CLUSTER_ID: SS9REpbqR8KusZbqQs-Lfg
+
+  KAFKA_PROCESS_ROLES: broker,controller
+  KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093
+  KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
+  KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092,SECURE://0.0.0.0:29093,TLS://0.0.0.0:29094,CONTROLLER://0.0.0.0:9093
+  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,SECURE:SASL_PLAINTEXT,TLS:SSL
+  KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+  # The no-login listeners act as User:ANONYMOUS, which is a super user here,
+  # so the services keep working. Never run a real cluster this way.
+  KAFKA_SASL_ENABLED_MECHANISMS: SCRAM-SHA-256
+  KAFKA_LISTENER_NAME_SECURE_SCRAM___SHA___256_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required;
+  KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
+  KAFKA_SUPER_USERS: User:ANONYMOUS;User:admin
+
+  KAFKA_LISTENER_NAME_TLS_SSL_KEYSTORE_LOCATION: /certs/kafka.p12
+  KAFKA_LISTENER_NAME_TLS_SSL_KEYSTORE_TYPE: PKCS12
+  KAFKA_LISTENER_NAME_TLS_SSL_KEYSTORE_PASSWORD: rideflow-demo
+
+  KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+  KAFKA_MIN_INSYNC_REPLICAS: 2
+  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+
+  KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+
+  KAFKA_LOG_DIRS: /var/lib/kafka/data
+
+  KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 5000
+  KAFKA_LOG_CLEANER_BACKOFF_MS: 1000
+  KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+  KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+
+x-kafka-broker: &kafka-broker
+  image: apache/kafka:4.3.1
+  depends_on:
+    kafka-certs:
+      condition: service_completed_successfully
+  healthcheck:
+    test: ["CMD-SHELL", "nc -z localhost 29092"]
+    interval: 3s
+    timeout: 5s
+    retries: 40
+    start_period: 10s
+  restart: unless-stopped
+
+x-service-env: &service-env
+  KAFKA_BOOTSTRAP_SERVERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
+  RIDE_TOPIC: ride-events
+
+x-after-init: &after-init
+  kafka-init:
+    condition: service_completed_successfully
+
+services:
+  kafka-certs:
+    image: apache/kafka:4.3.1
+    container_name: kafka-certs
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        if [ ! -f /certs/kafka.p12 ]; then
+          keytool -genkeypair -alias rideflow -keyalg RSA -keysize 2048 -validity 3650 \
+            -dname "CN=rideflow-demo" \
+            -ext "SAN=dns:kafka-1,dns:kafka-2,dns:kafka-3,dns:localhost" \
+            -keystore /certs/kafka.p12 -storetype PKCS12 -storepass rideflow-demo
+          keytool -exportcert -rfc -alias rideflow \
+            -keystore /certs/kafka.p12 -storepass rideflow-demo -file /certs/ca.pem
+          chmod 644 /certs/kafka.p12 /certs/ca.pem
+        fi
+        echo "certificate ready"
+    volumes:
+      - kafka-certs:/certs
+    restart: "no"
+
+  kafka-1:
+    <<: *kafka-broker
+    container_name: kafka-1
+    ports:
+      - "9092:9092"
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: 1
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-1:29092,PLAINTEXT_HOST://localhost:9092,SECURE://kafka-1:29093,TLS://kafka-1:29094
+    volumes:
+      - kafka-1-data:/var/lib/kafka/data
+      - kafka-certs:/certs:ro
+
+  kafka-2:
+    <<: *kafka-broker
+    container_name: kafka-2
+    ports:
+      - "9094:9092"
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: 2
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-2:29092,PLAINTEXT_HOST://localhost:9094,SECURE://kafka-2:29093,TLS://kafka-2:29094
+    volumes:
+      - kafka-2-data:/var/lib/kafka/data
+      - kafka-certs:/certs:ro
+
+  kafka-3:
+    <<: *kafka-broker
+    container_name: kafka-3
+    ports:
+      - "9095:9092"
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: 3
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-3:29092,PLAINTEXT_HOST://localhost:9095,SECURE://kafka-3:29093,TLS://kafka-3:29094
+    volumes:
+      - kafka-3-data:/var/lib/kafka/data
+      - kafka-certs:/certs:ro
+
+  kafka-init:
+    image: apache/kafka:4.3.1
+    container_name: kafka-init
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        BS=kafka-1:29092,kafka-2:29092,kafka-3:29092
+        BIN=/opt/kafka/bin
+
+        echo "waiting for all 3 brokers"
+        tries=0
+        until [ "$$($$BIN/kafka-broker-api-versions.sh --bootstrap-server $$BS 2>/dev/null | grep -c 'id: ')" = "3" ]; do
+          tries=$$((tries + 1))
+          [ "$$tries" -lt 60 ] || { echo "brokers did not start"; exit 1; }
+          sleep 2
+        done
+
+        topic() {
+          $$BIN/kafka-topics.sh --bootstrap-server $$BS --create --if-not-exists \
+            --replication-factor 3 --topic "$$1" --partitions "$$2" $${3:-}
+        }
+
+        topic ride-events 6
+        topic invoices 3
+        topic ride-events-dlq 1
+
+        STATE="--config cleanup.policy=compact --config segment.ms=60000 --config min.cleanable.dirty.ratio=0.1"
+        topic analytics-state 1 "$$STATE"
+        topic billing-state 1 "$$STATE"
+
+        # Feature Lab: demands all 3 copies, so stopping one broker refuses acks=all
+        topic lab.min-isr 1 "--config min.insync.replicas=3"
+        topic lab.mirror-demo 1
+
+        topic lab.secure 1
+        topic lab.secret 1
+        $$BIN/kafka-configs.sh --bootstrap-server $$BS --alter --entity-type users --entity-name alice \
+          --add-config 'SCRAM-SHA-256=[password=alice-secret]'
+        $$BIN/kafka-configs.sh --bootstrap-server $$BS --alter --entity-type users --entity-name bob \
+          --add-config 'SCRAM-SHA-256=[password=bob-secret]'
+        $$BIN/kafka-acls.sh --bootstrap-server $$BS --add --allow-principal User:alice \
+          --operation Read --operation Write --operation Describe --topic lab.secure
+        $$BIN/kafka-acls.sh --bootstrap-server $$BS --add --allow-principal User:alice \
+          --operation Read --group lab-secure-group
+
+        $$BIN/kafka-configs.sh --bootstrap-server $$BS --alter --entity-type clients \
+          --entity-name lab-throttled --add-config 'producer_byte_rate=262144'
+
+        $$BIN/kafka-topics.sh --bootstrap-server $$BS --list
+        echo "init finished"
+    restart: "no"
+
+  kafka-ui:
+    image: ghcr.io/kafbat/kafka-ui@sha256:7cda86a33344160309fdb65146332e4da65db81a945614f2fe32e210803f6fd1
+    container_name: kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: rideflow-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
+      DYNAMIC_CONFIG_ENABLED: "true"
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+    restart: unless-stopped
+
+  trip-service:
+    build: ./trip_service
+    container_name: trip-service
+    ports:
+      - "8000:8000"
+    environment:
+      <<: *service-env
+    volumes:
+      - ./trip_service/app:/service/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on: *after-init
+    restart: unless-stopped
+
+  analytics-service:
+    build: ./analytics_service
+    container_name: analytics-service
+    ports:
+      - "8001:8001"
+    environment:
+      <<: *service-env
+      GROUP_ID: analytics
+      STATE_TOPIC: analytics-state
+    volumes:
+      - ./analytics_service/app:/service/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+    depends_on: *after-init
+    restart: unless-stopped
+
+  billing-service:
+    build: ./billing_service
+    container_name: billing-service
+    ports:
+      - "8002:8002"
+    environment:
+      <<: *service-env
+      INVOICE_TOPIC: invoices
+      DLQ_TOPIC: ride-events-dlq
+      STATE_TOPIC: billing-state
+      GROUP_ID: billing
+      COMMISSION_RATE: "0.20"
+    volumes:
+      - ./billing_service/app:/service/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
+    depends_on: *after-init
+    restart: unless-stopped
+
+  lab-service:
+    build: ./lab_service
+    container_name: lab-service
+    ports:
+      - "8003:8003"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
+      KAFKA_SASL_SERVERS: kafka-1:29093,kafka-2:29093,kafka-3:29093
+      KAFKA_TLS_SERVERS: kafka-1:29094,kafka-2:29094,kafka-3:29094
+    volumes:
+      - ./lab_service/app:/service/app
+      - kafka-1-data:/broker-data:ro
+      - kafka-certs:/certs:ro
+      - connect-data:/connect-data:ro
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
+    depends_on: *after-init
+    restart: unless-stopped
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:8.1.0
+    container_name: schema-registry
+    profiles: [full]
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
+      SCHEMA_REGISTRY_HEAP_OPTS: -Xms128m -Xmx256m
+    depends_on: *after-init
+    restart: unless-stopped
+
+  kafka-connect:
+    image: apache/kafka:4.3.1
+    container_name: kafka-connect
+    profiles: [full]
+    user: "0:0"                 # it writes files to the shared volume
+    ports:
+      - "8083:8083"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat > /tmp/connect.properties <<EOF
+        bootstrap.servers=kafka-1:29092,kafka-2:29092,kafka-3:29092
+        group.id=rideflow-connect
+        listeners=http://0.0.0.0:8083
+        rest.advertised.host.name=kafka-connect
+        key.converter=org.apache.kafka.connect.storage.StringConverter
+        value.converter=org.apache.kafka.connect.storage.StringConverter
+        config.storage.topic=connect-configs
+        offset.storage.topic=connect-offsets
+        status.storage.topic=connect-status
+        config.storage.replication.factor=3
+        offset.storage.replication.factor=3
+        status.storage.replication.factor=3
+        connector.client.config.override.policy=All
+        plugin.path=/opt/kafka/libs/connect-file-4.3.1.jar
+        EOF
+        exec /opt/kafka/bin/connect-distributed.sh /tmp/connect.properties
+    environment:
+      KAFKA_HEAP_OPTS: -Xms128m -Xmx384m
+    volumes:
+      - connect-data:/connect-data
+    depends_on: *after-init
+    restart: unless-stopped
+
+  kafka-dr:
+    image: apache/kafka:4.3.1
+    container_name: kafka-dr
+    profiles: [full]
+    ports:
+      - "9096:9092"
+    environment:
+      CLUSTER_ID: bz6bX-hRScaqmNJ_o6WpLQ
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-dr:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-dr:29092,PLAINTEXT_HOST://localhost:9096
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_HEAP_OPTS: -Xms128m -Xmx384m
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 29092"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 10s
+    restart: unless-stopped
+
+  mirror-maker:
+    image: apache/kafka:4.3.1
+    container_name: mirror-maker
+    profiles: [full]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat > /tmp/mm2.properties <<EOF
+        clusters = primary, dr
+        primary.bootstrap.servers = kafka-1:29092,kafka-2:29092,kafka-3:29092
+        dr.bootstrap.servers = kafka-dr:29092
+        primary->dr.enabled = true
+        primary->dr.topics = lab\.mirror.*
+        dr->primary.enabled = false
+        replication.factor = 1
+        sync.topic.acls.enabled = false
+        refresh.topics.interval.seconds = 5
+        refresh.groups.interval.seconds = 30
+        checkpoints.topic.replication.factor = 1
+        heartbeats.topic.replication.factor = 1
+        offset-syncs.topic.replication.factor = 1
+        offset.storage.replication.factor = 1
+        status.storage.replication.factor = 1
+        config.storage.replication.factor = 1
+        EOF
+        exec /opt/kafka/bin/connect-mirror-maker.sh /tmp/mm2.properties
+    environment:
+      KAFKA_HEAP_OPTS: -Xms128m -Xmx384m
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      kafka-dr:
+        condition: service_healthy
+    restart: unless-stopped
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.9.0
+    container_name: kafka-exporter
+    profiles: [full]
+    command:
+      - --kafka.server=kafka-1:29092
+      - --kafka.server=kafka-2:29092
+      - --kafka.server=kafka-3:29092
+      - --kafka.version=3.9.0
+    depends_on: *after-init
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    container_name: prometheus
+    profiles: [full]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - kafka-exporter
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    container_name: grafana
+    profiles: [full]
+    ports:
+      - "3000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/rideflow-kafka.json
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  kafka-1-data:
+  kafka-2-data:
+  kafka-3-data:
+  kafka-certs:
+  connect-data:

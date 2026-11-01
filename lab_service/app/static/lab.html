@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RideFlow Feature Lab</title>
+<style>
+  :root {
+    color-scheme: light;
+    --plane: #f9f9f7; --surface: #fcfcfb; --surface-2: #f3f3f0;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #6f6d67;
+    --grid: #e1e0d9; --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6; --series-2: #c9531f;
+    --good: #0a7d0a; --warning: #9a6a00; --critical: #d03b3b;
+    --code-bg: #f3f3f0; --code-text: #1c1c1a;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --plane: #0d0d0d; --surface: #1a1a19; --surface-2: #222221;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #9a988f;
+    --grid: #2c2c2a; --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --series-2: #e8703a;
+    --good: #3fb950; --warning: #fab219; --critical: #e66767;
+    --code-bg: #121211; --code-text: #e6e4da;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--plane); color: var(--text-primary);
+    font: 14px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  code, pre, .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 20px 16px 72px; }
+
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--text-secondary); font-size: 13px; }
+  .spacer { flex: 1; }
+  a.link {
+    color: var(--series-1); font-size: 12px; text-decoration: none;
+    border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px;
+  }
+  a.link:hover { background: var(--surface-2); }
+  button { font: inherit; cursor: pointer; }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+  button.ghost {
+    background: transparent; color: var(--text-secondary);
+    border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; font-size: 12px;
+  }
+  button.run {
+    background: var(--series-1); color: #fff; border: 0; border-radius: 8px;
+    padding: 7px 14px; font-weight: 600; font-size: 13px;
+  }
+  button.run:disabled { opacity: .55; cursor: default; }
+
+  .panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px 16px;
+  }
+  .panel h2 { font-size: 13px; margin: 0; font-weight: 650; }
+  .hint { color: var(--text-muted); font-size: 12px; }
+
+  .start { margin-top: 14px; }
+  .start summary { cursor: pointer; font-size: 15px; font-weight: 650; }
+  .start .intro { margin: 8px 0 0; color: var(--text-secondary); max-width: 92ch; }
+  .basics { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin-top: 10px; }
+  .basic { background: var(--surface-2); border-radius: 10px; padding: 8px 12px; }
+  .basic b { display: block; }
+  .basic span { color: var(--text-secondary); font-size: 13px; }
+
+  .cluster { margin-top: 14px; display: grid; grid-template-columns: 1.15fr 1fr; gap: 12px; }
+  .brokers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
+  .broker { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--surface-2); }
+  .broker.down { border-color: var(--critical); }
+  .broker .name { font-weight: 650; }
+  .broker .state { font-size: 12px; color: var(--good); }
+  .broker.down .state { color: var(--critical); font-weight: 600; }
+  .broker .role { font-size: 12px; color: var(--text-muted); min-height: 18px; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
+  .tile { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; }
+  .tile .v { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .tile .l { font-size: 12px; color: var(--text-muted); }
+  .try { margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); }
+  .try code { background: var(--code-bg); color: var(--code-text); padding: 3px 7px; border-radius: 6px; }
+  .map { margin-top: 8px; width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .map th { text-align: left; font-weight: 600; color: var(--text-muted); font-size: 11.5px; padding: 0 8px 4px 0; }
+  .map td { padding: 3px 8px 3px 0; border-top: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+  .chip { display: inline-block; min-width: 22px; text-align: center; padding: 0 5px; border-radius: 5px; background: var(--surface-2); margin-right: 3px; }
+  .chip.lead { background: var(--series-1); color: #fff; font-weight: 600; }
+  .chip.out { background: transparent; color: var(--critical); border: 1px dashed var(--critical); }
+
+  .bar {
+    position: sticky; top: 0; z-index: 5; margin: 14px -16px 0; padding: 10px 16px;
+    background: var(--plane); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  .progress { flex: 1; min-width: 160px; height: 8px; background: var(--grid); border-radius: 4px; overflow: hidden; }
+  .progress i { display: block; height: 100%; width: 0; background: var(--series-1); transition: width .2s; }
+  .counts { font-size: 13px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  .counts b.good { color: var(--good); } .counts b.bad { color: var(--critical); }
+
+  .layout { display: grid; grid-template-columns: 220px 1fr; gap: 16px; margin-top: 14px; align-items: start; }
+  nav { position: sticky; top: 66px; }
+  nav a {
+    display: flex; justify-content: space-between; gap: 8px; padding: 6px 10px;
+    border-radius: 8px; font-size: 13px; color: var(--text-secondary); text-decoration: none;
+  }
+  nav a:hover { background: var(--surface-2); color: var(--text-primary); }
+  nav .n { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+  section.group { scroll-margin-top: 66px; }
+  section.group + section.group { margin-top: 22px; }
+  section.group > h2 { font-size: 15px; margin: 0 0 10px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+  .card .top { display: flex; align-items: center; gap: 10px; }
+  .card h3 { font-size: 14px; margin: 0; flex: 1; font-weight: 650; }
+  .easy { margin-top: 8px; padding: 8px 12px; background: var(--surface-2); border-radius: 8px; }
+  .easy p { margin: 0; max-width: 92ch; }
+  .easy .label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+  .easy .simple { font-size: 14.5px; }
+  .easy .example { margin-top: 4px; color: var(--text-secondary); }
+  .more { margin-top: 6px; }
+  .more summary { cursor: pointer; color: var(--text-muted); font-size: 12px; }
+  .lesson { margin-top: 8px; }
+  .lesson > summary { cursor: pointer; color: var(--series-1); font-weight: 600; font-size: 13px; }
+  .lesson-body { margin-top: 6px; display: grid; gap: 8px; }
+  .lesson-body h4 { margin: 0; font-size: 12px; color: var(--text-muted); font-weight: 600; }
+  .lesson-body p { margin: 0; max-width: 92ch; }
+  .lesson-body ol { margin: 0; padding-left: 20px; max-width: 92ch; }
+  .group-intro { margin: -6px 0 10px; color: var(--text-secondary); }
+  .card .what { margin: 6px 0 0; color: var(--text-secondary); max-width: 92ch; }
+  .card .why { margin: 2px 0 0; color: var(--text-muted); font-size: 13px; max-width: 92ch; }
+  pre.code {
+    margin: 8px 0 0; padding: 8px 10px; background: var(--code-bg); color: var(--code-text);
+    border-radius: 8px; font-size: 12.5px; overflow-x: auto; white-space: pre;
+  }
+
+  .status { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); white-space: nowrap; }
+  .status.passed { color: var(--good); border-color: var(--good); }
+  .status.failed { color: var(--critical); border-color: var(--critical); }
+  .status.running { color: var(--series-1); border-color: var(--series-1); }
+
+  .result { margin-top: 10px; border-top: 1px solid var(--grid); padding-top: 8px; font-size: 13px; }
+  .result p { margin: 3px 0; color: var(--text-secondary); }
+  .result .title { font-size: 12px; color: var(--text-muted); margin: 8px 0 2px; }
+  .scroll { overflow-x: auto; }
+  .result table { border-collapse: collapse; font-size: 12.5px; margin: 4px 0 8px; }
+  .result th { text-align: left; color: var(--text-muted); font-weight: 600; padding: 2px 16px 3px 0; white-space: nowrap; }
+  .result td { padding: 3px 16px 3px 0; border-top: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+  .check { display: flex; gap: 8px; align-items: baseline; padding: 1px 0; }
+  .check .mark { font-weight: 700; width: 44px; flex: none; font-size: 12px; }
+  .check.ok .mark { color: var(--good); } .check.no .mark { color: var(--critical); }
+  .check .detail { color: var(--text-muted); font-size: 12px; }
+  .note { color: var(--text-secondary); background: var(--surface-2); border-radius: 8px; padding: 6px 10px; }
+  .error { color: var(--critical); }
+
+  @media (max-width: 960px) {
+    .cluster, .layout { grid-template-columns: 1fr; }
+    nav { position: static; display: flex; flex-wrap: wrap; gap: 2px; }
+  }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .progress i { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>RideFlow Feature Lab</h1>
+    <span class="sub">every Kafka feature, run for real on a real cluster</span>
+    <span class="spacer"></span>
+    <a class="link" id="toDashboard" target="_blank" rel="noopener">Live dashboard</a>
+    <a class="link" id="toBilling" target="_blank" rel="noopener">Billing</a>
+    <a class="link" id="toUi" target="_blank" rel="noopener">Kafka UI</a>
+    <button class="ghost" id="themeBtn">light</button>
+  </header>
+
+  <details class="panel start" open>
+    <summary>New to Kafka? Start here</summary>
+    <p class="intro">Think of Kafka as a shared notebook. Programs write notes in it, and other programs read them at their own speed. Notes are not erased when they are read. These 12 words are all you need for this page.</p>
+    <p class="intro"><b>How to learn here:</b> go from top to bottom. On each card, read the simple words, open <b>Learn this feature</b>, then press <b>Run</b> and compare the result with what the lesson told you to expect.</p>
+    <div class="basics" id="basics"></div>
+  </details>
+
+  <div class="cluster">
+    <div class="panel">
+      <h2>The cluster, live</h2>
+      <div class="brokers" id="brokers"></div>
+      <div class="tiles">
+        <div class="tile"><div class="v" id="under">-</div><div class="l">under-replicated partitions</div></div>
+        <div class="tile"><div class="v" id="offline">-</div><div class="l">offline partitions</div></div>
+        <div class="tile"><div class="v" id="lag">-</div><div class="l">total consumer lag</div></div>
+      </div>
+      <div class="try">
+        <span>Stop a broker in a terminal and watch this update:</span>
+        <code>docker compose stop kafka-2</code>
+        <code>docker compose start kafka-2</code>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>ride-events: who leads each partition</h2>
+      <table class="map">
+        <thead><tr><th>Partition</th><th>Replicas (blue is the leader)</th><th>In sync</th></tr></thead>
+        <tbody id="map"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="bar">
+    <button class="run" id="runAll">Run everything</button>
+    <div class="progress"><i id="progress"></i></div>
+    <span class="counts" id="counts"></span>
+  </div>
+
+  <div class="layout">
+    <nav id="nav"></nav>
+    <main id="groups"></main>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+// builds elements from data, so nothing from Kafka is ever treated as HTML
+function el(tag, props = {}, ...children) {
+  const node = document.createElement(tag);
+  Object.assign(node, props);
+  node.append(...children.filter(c => c !== null && c !== undefined));
+  return node;
+}
+const text = value => (typeof value === "object" && value !== null) ? JSON.stringify(value) : String(value);
+
+const host = location.hostname;
+$("toDashboard").href = `http://${host}:8001`;
+$("toBilling").href = `http://${host}:8002`;
+$("toUi").href = `http://${host}:8080`;
+
+$("themeBtn").onclick = () => {
+  const dark = document.documentElement.getAttribute("data-theme") !== "light";
+  document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
+  $("themeBtn").textContent = dark ? "dark" : "light";
+};
+
+function renderCluster(c) {
+  if (!c.ok) {
+    $("brokers").replaceChildren(el("div", { className: "error", textContent: `Cannot read the cluster yet: ${c.error}` }));
+    return;
+  }
+  $("brokers").replaceChildren(...c.brokers.map(b => el("div", { className: "broker" + (b.alive ? "" : " down") },
+    el("div", { className: "name", textContent: `Broker ${b.id}` }),
+    el("div", { className: "state", textContent: b.alive ? "alive" : "DOWN" }),
+    el("div", { className: "role", textContent: b.alive && b.id === c.controller ? "active controller" : "" }),
+  )));
+  $("under").textContent = c.under_replicated;
+  $("under").style.color = c.under_replicated ? "var(--warning)" : "var(--good)";
+  $("offline").textContent = c.offline;
+  $("offline").style.color = c.offline ? "var(--critical)" : "var(--good)";
+  const lag = c.groups.reduce((sum, g) => sum + g.lag, 0);
+  $("lag").textContent = lag.toLocaleString();
+
+  const rides = c.topics.find(t => t.name === "ride-events");
+  if (!rides) return;
+  $("map").replaceChildren(...rides.partitions.map(p => el("tr", {},
+    el("td", { textContent: `P${p.id}` }),
+    el("td", {}, ...p.replicas.map(r => el("span", {
+      className: "chip" + (r === p.leader ? " lead" : "") + (p.isr.includes(r) ? "" : " out"),
+      textContent: r,
+    }))),
+    el("td", { textContent: `${p.isr.length} of ${p.replicas.length}` }),
+  )));
+}
+
+async function watchCluster() {
+  try { renderCluster(await (await fetch("/api/cluster")).json()); }
+  catch (e) { renderCluster({ ok: false, error: "the Lab is not reachable" }); }
+  setTimeout(watchCluster, 1500);
+}
+watchCluster();
+
+const cards = new Map();
+const results = new Map();
+
+function renderResult(id, result) {
+  const box = cards.get(id).result;
+  box.hidden = false;
+  box.replaceChildren();
+
+  if (result.status === "skipped") {
+    box.append(el("p", { className: "note", textContent: result.error }));
+    return;
+  }
+  for (const item of result.items) {
+    if (item.kind === "step") box.append(el("p", { textContent: item.text }));
+    if (item.kind === "table") {
+      if (item.title) box.append(el("div", { className: "title", textContent: item.title }));
+      box.append(el("div", { className: "scroll" }, el("table", {},
+        el("thead", {}, el("tr", {}, ...item.headers.map(h => el("th", { textContent: h })))),
+        el("tbody", {}, ...item.rows.map(row => el("tr", {}, ...row.map(cell => el("td", { textContent: text(cell) }))))),
+      )));
+    }
+    if (item.kind === "check") {
+      box.append(el("div", { className: "check " + (item.ok ? "ok" : "no") },
+        el("span", { className: "mark", textContent: item.ok ? "PASS" : "FAIL" }),
+        el("span", { textContent: item.label }),
+        item.detail ? el("span", { className: "detail", textContent: item.detail }) : null,
+      ));
+    }
+  }
+  if (result.error) box.append(el("p", { className: "error", textContent: result.error }));
+  box.append(el("p", { className: "title", textContent: `Took ${result.seconds} s` }));
+}
+
+function setStatus(id, status) {
+  const badge = cards.get(id).status;
+  badge.className = "status " + status;
+  badge.textContent = { idle: "not run", running: "running", passed: "passed", failed: "failed", skipped: "needs --profile full" }[status];
+}
+
+function updateCounts() {
+  const all = [...results.values()];
+  const passed = all.filter(r => r.status === "passed").length;
+  const failed = all.filter(r => r.status === "failed").length;
+  const skipped = all.filter(r => r.status === "skipped").length;
+  $("counts").replaceChildren(
+    el("b", { className: "good", textContent: `${passed} passed` }), " · ",
+    el("b", { className: failed ? "bad" : "", textContent: `${failed} failed` }),
+    ` · ${skipped} skipped · ${cards.size} features`,
+  );
+  $("progress").style.width = `${all.length / cards.size * 100}%`;
+}
+
+async function run(id) {
+  const card = cards.get(id);
+  card.button.disabled = true;
+  setStatus(id, "running");
+  let result;
+  try {
+    const response = await fetch(`/api/features/${id}/run`, { method: "POST" });
+    result = await response.json();
+  } catch (e) {
+    result = { id, status: "failed", error: "The Lab did not answer. It may be restarting.", items: [], seconds: 0 };
+  }
+  results.set(id, result);
+  setStatus(id, result.status);
+  renderResult(id, result);
+  card.button.disabled = false;
+  updateCounts();
+}
+
+$("runAll").onclick = async () => {
+  $("runAll").disabled = true;
+  results.clear();
+  for (const id of cards.keys()) { setStatus(id, "idle"); cards.get(id).result.hidden = true; }
+  updateCounts();
+  for (const id of cards.keys()) await run(id);
+  $("runAll").disabled = false;
+};
+
+async function load() {
+  const basics = await (await fetch("/api/basics")).json();
+  $("basics").replaceChildren(...basics.map(b => el("div", { className: "basic" },
+    el("b", { textContent: b.word }),
+    el("span", { textContent: b.meaning }),
+  )));
+
+  const groups = await (await fetch("/api/features")).json();
+  const main = $("groups"), nav = $("nav");
+  groups.forEach((group, index) => {
+    const anchor = `group-${index}`;
+    nav.append(el("a", { href: `#${anchor}` },
+      el("span", { textContent: `${index + 1}. ${group.name}` }),
+      el("span", { className: "n", textContent: group.features.length }),
+    ));
+    const section = el("section", { className: "group", id: anchor },
+      el("h2", { textContent: `${index + 1}. ${group.name}` }),
+      el("p", { className: "group-intro", textContent: group.intro }),
+    );
+    for (const f of group.features) {
+      const status = el("span", { className: "status" });
+      const button = el("button", { className: "run", textContent: "Run" });
+      const result = el("div", { className: "result", hidden: true });
+      cards.set(f.id, { status, button, result });
+      button.onclick = () => run(f.id);
+      section.append(el("article", { className: "card", id: f.id },
+        el("div", { className: "top" }, el("h3", { textContent: f.title }), status, button),
+        el("div", { className: "easy" },
+          el("p", { className: "label", textContent: "In simple words" }),
+          el("p", { className: "simple", textContent: f.simple }),
+          el("p", { className: "example" }, el("b", { textContent: "Everyday example: " }), f.example),
+        ),
+        el("details", { className: "lesson" },
+          el("summary", { textContent: "Learn this feature" }),
+          el("div", { className: "lesson-body" },
+            el("div", {}, el("h4", { textContent: "Why does it exist?" }), el("p", { textContent: f.lesson.problem })),
+            el("div", {}, el("h4", { textContent: "When would I use it?" }), el("p", { textContent: f.lesson.use_when })),
+            el("div", {}, el("h4", { textContent: "How does it work?" }),
+              el("ol", {}, ...f.lesson.steps.map(step => el("li", { textContent: step })))),
+            el("div", {}, el("h4", { textContent: "What will I see when I press Run?" }), el("p", { textContent: f.lesson.run_shows })),
+          ),
+        ),
+        el("details", { className: "more" },
+          el("summary", { textContent: "Technical details and code" }),
+          el("p", { className: "what", textContent: f.what }),
+          el("p", { className: "why", textContent: f.why }),
+          f.code ? el("pre", { className: "code", textContent: f.code }) : null,
+        ),
+        result,
+      ));
+      setStatus(f.id, "idle");
+    }
+    main.append(section);
+  });
+  updateCounts();
+}
+load();
+</script>
+</body>
+</html>

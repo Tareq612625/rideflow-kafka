@@ -1,0 +1,88 @@
+{
+  "uid": "rideflow-kafka",
+  "title": "RideFlow Kafka",
+  "tags": ["kafka", "rideflow"],
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Brokers alive",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "red", "value": null },
+            { "color": "orange", "value": 2 },
+            { "color": "green", "value": 3 }
+          ] }
+        }
+      },
+      "targets": [{ "refId": "A", "expr": "kafka_brokers" }]
+    },
+    {
+      "type": "stat",
+      "title": "Under-replicated partitions",
+      "description": "Partitions with a copy that has fallen behind. It should be 0.",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "red", "value": 1 }
+          ] }
+        }
+      },
+      "targets": [{ "refId": "A", "expr": "sum(kafka_topic_partition_under_replicated_partition)" }]
+    },
+    {
+      "type": "stat",
+      "title": "Messages in ride-events",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(kafka_topic_partition_current_offset{topic=\"ride-events\"})" }]
+    },
+    {
+      "type": "stat",
+      "title": "Total consumer lag",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "orange", "value": 1000 },
+            { "color": "red", "value": 10000 }
+          ] }
+        }
+      },
+      "targets": [{ "refId": "A", "expr": "sum(kafka_consumergroup_lag{consumergroup=~\"analytics|billing\"})" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Messages written per second",
+      "gridPos": { "x": 0, "y": 5, "w": 12, "h": 10 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "refId": "A",
+        "expr": "sum by (topic) (rate(kafka_topic_partition_current_offset{topic=~\"ride-events|invoices\"}[30s]))",
+        "legendFormat": "{{topic}}"
+      }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Consumer lag by group",
+      "gridPos": { "x": 12, "y": 5, "w": 12, "h": 10 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "refId": "A",
+        "expr": "sum by (consumergroup) (kafka_consumergroup_lag{consumergroup=~\"analytics|billing\"})",
+        "legendFormat": "{{consumergroup}}"
+      }]
+    }
+  ]
+}

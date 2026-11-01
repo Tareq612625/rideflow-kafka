@@ -21,5 +21,6 @@ CONNECT_DATA = Path(os.getenv("CONNECT_DATA", "/connect-data"))
 
 RUN_TIMEOUT_SEC = float(os.getenv("RUN_TIMEOUT_SEC", "120"))
 CLUSTER_REFRESH_SEC = float(os.getenv("CLUSTER_REFRESH_SEC", "1.5"))
+CLUSTER_STALE_SEC = float(os.getenv("CLUSTER_STALE_SEC", "15"))
 
 STATIC_DIR = Path(__file__).parent / "static"

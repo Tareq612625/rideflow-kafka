@@ -11,6 +11,10 @@ dashboards and a **Feature Lab** where 50 Kafka features can each be run with on
 Every feature talks to the real cluster and shows the real result, next to a beginner
 explanation. It is built for learning Kafka, teaching it, and demonstrating it live.
 
+![A short tour of RideFlow: the Feature Lab, the live dashboard, billing, Kafka UI and a broker failure](docs/demo/rideflow-tour.gif)
+
+**[Watch the 1.5-minute tour in higher quality (MP4)](docs/demo/rideflow-tour.mp4)**
+
 ## Table of contents
 
 - [Features](#features)
@@ -41,18 +45,57 @@ explanation. It is built for learning Kafka, teaching it, and demonstrating it l
 
 ## Architecture
 
-```text
-                                ┌─► analytics-service :8001   statistics, surge alerts, dashboard
- trip-service ──► ride-events ──┤
-    :8000         (6 partitions)└─► billing-service   :8002 ──► invoices
-                                                            ──► ride-events-dlq
+```mermaid
+flowchart LR
+    T["trip-service<br/>:8000"]
 
- kafka-1, kafka-2, kafka-3      3 brokers, replication factor 3, min.insync.replicas 2
- lab-service :8003              runs every feature against the same cluster
- kafka-ui    :8080              browse topics, partitions and consumer groups
+    subgraph IN["Kafka topic"]
+        R[("ride-events<br/>6 partitions")]
+    end
+
+    A["analytics-service<br/>:8001"]
+    B["billing-service<br/>:8002"]
+
+    subgraph OUT["Kafka topics"]
+        AS[("analytics-state")]
+        BS[("billing-state")]
+        I[("invoices<br/>3 partitions")]
+        D[("ride-events-dlq<br/>1 partition")]
+    end
+
+    T -- "trip events" --> R
+    R -- "group analytics" --> A
+    R -- "group billing" --> B
+    A -- "saved statistics" --> AS
+    B -- "saved totals" --> BS
+    B -- "invoices" --> I
+    B -- "broken messages" --> D
 ```
 
 The services never call each other. They only communicate through Kafka.
+
+- **Cluster:** `kafka-1`, `kafka-2` and `kafka-3`, with replication factor 3 and `min.insync.replicas` 2
+- **Feature Lab:** `lab-service` on port 8003 runs every feature against the same cluster
+- **Kafka UI:** `kafka-ui` on port 8080 lets you browse topics, partitions and consumer groups
+
+### How one message travels
+
+```mermaid
+flowchart LR
+    subgraph P["Trip service"]
+        direction TB
+        P1["Step 1: Call send()"] --> P2["Step 2: Serialize"] --> P3["Step 3: Choose partition"] --> P4["Step 4: Join a batch"]
+    end
+    subgraph K["Kafka"]
+        direction TB
+        K1["Step 5: Reach the leader"] --> K2["Step 6: Append to the log"] --> K3["Step 7: Send the ack"]
+    end
+    subgraph C["Analytics service"]
+        direction TB
+        C1["Step 8: Poll"] --> C2["Step 9: Deserialize"] --> C3["Step 10: Run the handler"] --> C4["Step 11: Commit the offset"]
+    end
+    P --> K --> C
+```
 
 ## Tech stack
 
@@ -122,6 +165,13 @@ docker compose exec lab-service python -m app.selftest --only keys,acks
 4. On each card, open **Learn this feature**, press **Run**, and compare the result with the lesson.
 5. Press **Run everything** to run all the features in order.
 
+![The Feature Lab, with the beginner guide and the live cluster panel](docs/images/01-feature-lab.png)
+
+Each card explains the feature in simple words, gives an everyday example and a short lesson, then
+shows the real result from the cluster:
+
+![A feature card with its lesson and real PASS results](docs/images/02-lesson-and-result.png)
+
 ### Watch the live pipeline
 
 On the dashboard at <http://localhost:8001>:
@@ -131,6 +181,22 @@ On the dashboard at <http://localhost:8001>:
 - Press **Send a broken message**, then open the billing page to see it parked in the dead letter topic.
 - Click any row in the live stream to read that message back from Kafka.
 
+![The live dashboard after a burst of 10,000 events](docs/images/04-dashboard.png)
+
+**Trace one message** shows the real key, partition and offset of one event at each step:
+
+![The guided trace of one message](docs/images/05-trace-one-message.png)
+
+The billing page at <http://localhost:8002> reads the same events and turns completed trips into invoices:
+
+![The billing dashboard with invoices and totals](docs/images/06-billing.png)
+
+### Browse Kafka directly
+
+Kafka UI at <http://localhost:8080> shows the topics, partitions, consumer groups and messages:
+
+![Kafka UI showing the project's topics](docs/images/07-kafka-ui.png)
+
 ### Experiment: stop a broker
 
 In the Feature Lab, run **Survive a broker failure**. While it runs:
@@ -139,8 +205,12 @@ In the Feature Lab, run **Survive a broker failure**. While it runs:
 docker compose stop kafka-2
 ```
 
-Leaders move on the cluster panel, and the test still passes with nothing lost. While the broker
-is down, run **min.insync.replicas refuses unsafe writes** to see an unsafe write refused. Then:
+Leaders move on the cluster panel, and the test still passes with nothing lost:
+
+![The cluster panel with broker 2 down and leaders moved](docs/images/03-broker-down.png)
+
+While the broker is down, run **min.insync.replicas refuses unsafe writes** to see an unsafe write
+refused. Then:
 
 ```bash
 docker compose start kafka-2
@@ -218,7 +288,8 @@ rideflow-kafka/
 │       ├── easy.py         beginner explanations and everyday examples
 │       ├── lessons.py      the lesson for each feature
 │       └── selftest.py     runs every feature from the command line
-└── monitoring/             Prometheus and Grafana settings
+├── monitoring/             Prometheus and Grafana settings
+└── docs/                   screenshots and the tour video
 ```
 
 To add a feature, write a function with `@feature(...)` in `lab_service/app/features/`, then add
@@ -241,6 +312,26 @@ its text to `easy.py` and `lessons.py`. It appears on the page automatically.
 | 3000 | Grafana | Full |
 
 ## How the pipeline stays correct
+
+```mermaid
+sequenceDiagram
+    participant R as ride-events
+    participant B as billing-service
+    participant K as Kafka
+    participant I as invoices
+
+    B->>R: Read a batch of rides
+    B->>K: Begin a transaction
+    B->>I: Write the invoices
+    B->>K: Add the totals and the read position
+    alt Everything worked
+        B->>K: Commit
+        Note over I: Readers see each invoice exactly once
+    else The service crashed
+        K-->>I: Cancel the unfinished transaction
+        Note over B,K: After a restart, the same rides are processed again
+    end
+```
 
 - **Exactly-once billing:** invoices, totals and read positions commit in one Kafka transaction.
   A crash cancels all of it, and the same rides are processed again.

@@ -380,7 +380,7 @@ async function load() {
       const result = el("div", { className: "result", hidden: true });
       cards.set(f.id, { status, button, result });
       button.onclick = () => run(f.id);
-      section.append(el("article", { className: "card", id: f.id },
+      section.append(el("article", { className: "card", id: `feature-${f.id}` },
         el("div", { className: "top" }, el("h3", { textContent: f.title }), status, button),
         el("div", { className: "easy" },
           el("p", { className: "label", textContent: "In simple words" }),

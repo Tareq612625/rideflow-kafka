@@ -40,7 +40,10 @@ class ClusterView:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                self.snapshot = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+                # A broker rejoining can fail one look. Keep the last good picture
+                # unless the cluster has really been unreadable for a while.
+                if time.time() - self.snapshot.get("at", 0) > config.CLUSTER_STALE_SEC:
+                    self.snapshot = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
                 await asyncio.sleep(2)
             finally:
                 for client_stop in (admin.close, reader.stop):
@@ -75,6 +78,9 @@ class ClusterView:
         for group_id, _kind in await admin.list_consumer_groups():
             if group_id.startswith("lab."):
                 continue
+            described = (await admin.describe_consumer_groups([group_id]))[0].to_object()
+            if described["groups"][0]["state"] == "Empty":
+                continue   # nobody is reading, so a finished replay group must not count as lag
             offsets = await admin.list_consumer_group_offsets(group_id)
             lag = sum(max(0, ends.get(tp, m.offset) - m.offset) for tp, m in offsets.items())
             groups.append({"id": group_id, "lag": lag})

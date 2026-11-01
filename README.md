@@ -13,7 +13,7 @@ explanation. It is built for learning Kafka, teaching it, and demonstrating it l
 
 ![A short tour of RideFlow: the Feature Lab, the live dashboard, billing, Kafka UI and a broker failure](docs/demo/rideflow-tour.gif)
 
-**[Watch the 1.5-minute tour in higher quality (MP4)](docs/demo/rideflow-tour.mp4)**
+**[Download the 1.5-minute tour in higher quality (MP4)](https://raw.githubusercontent.com/Tareq612625/rideflow-kafka/main/docs/demo/rideflow-tour.mp4)**
 
 ## Table of contents
 
